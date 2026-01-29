@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ISTD Dynamic Letters — Touch Compatible, Center-Based, Loops</title>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2
+?family=Inter:ital,wght@0,100..900;1,100..900
+&family=Roboto:ital,wght@0,100..900;1,100..900
+&family=DM+Sans:ital,wght@0,100..900;1,100..900
+&family=Work+Sans:ital,wght@0,100..900;1,100..900
+&family=Montserrat:ital,wght@0,100..900;1,100..900
+&family=Poppins:ital,wght@0,100..900;1,100..900
+&family=Raleway:ital,wght@0,100..900;1,100..900
+&family=Karla:ital,wght@0,200..800;1,200..800
+&family=Manrope:wght@200..800
+&family=Rubik:ital,wght@0,300..900;1,300..900
+&family=Oswald:wght@200..700
+&family=Merriweather:ital,wght@0,300..900;1,300..900
+&family=Playfair+Display:ital,wght@0,400..900;1,400..900
+&family=Lora:ital,wght@0,400..700;1,400..700
+&family=Spectral:ital,wght@0,200..800;1,200..800
+&family=Crimson+Text:ital,wght@0,400..700;1,400..700
+&family=Libre+Baskerville:ital,wght@0,400;1,400;0,700
+&family=Bitter:ital,wght@0,300..900;1,300..900
+&family=Source+Serif+4:ital,wght@0,200..900;1,200..900
+&family=DM+Serif+Display:ital@0;1
+&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700
+&family=IBM+Plex+Mono:ital,wght@0,100..700;1,100..700
+&family=Inconsolata:wght@200..900
+&family=Space+Mono:ital,wght@0,400;1,400
+&family=Fira+Mono:wght@300..700
+&display=swap" rel="stylesheet">
+
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: #000;
+    color: #fff;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+
+    /* Let touch gestures (pinch/scroll) work normally on the page */
+    touch-action: manipulation; /* we read pointer position; no preventDefault */
+  }
+
+  #istd {
+    width: min(92vw, 1200px);
+    height: clamp(42vh, 56vh, 68vh);
+    display: grid;
+    place-items: center;
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .row {
+    display: flex;
+    gap: clamp(0.4vw, 1vw, 1.6vw);
+    align-items: baseline;
+    justify-content: center;
+    width: 100%;
+  }
+
+  #istd span.letter {
+    display: inline-block;
+    width: clamp(3.2rem, 9vw, 9.5rem);  /* fixed lane per letter */
+    text-align: center;
+    font-size: clamp(4rem, 12vw, 12rem);
+    line-height: 1;
+    color: #fff;
+    transition: font-style 0.18s ease, letter-spacing 0.18s ease, transform 0.18s ease;
+    user-select: none;
+    will-change: font-weight, letter-spacing, font-style, transform, font-variation-settings;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Distance-from-center indicator */
+  #t-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    height: 3px;
+    width: 0%;
+    background: #fff;
+    transform: translateX(-50%);
+    transition: width 0.07s linear;
+  }
+
+  /* Vertical toggle badge */
+  #v-badge {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    color: #000;
+    background: #fff;
+    border-radius: 10px;
+    padding: 6px 10px;
+    opacity: 0.85;
+    user-select: none;
+  }
+
+  #istd:focus-visible {
+    outline: 3px solid #8ab4ff;
+    outline-offset: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #istd span.letter, #t-indicator { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="istd" aria-label="Interactive I S T D letters" tabindex="0">
+  <div class="row" aria-hidden="true">
+    <span class="letter" id="L-I" data-base="I">I</span>
+    <span class="letter" id="L-S" data-base="S">S</span>
+    <span class="letter" id="L-T" data-base="T">T</span>
+    <span class="letter" id="L-D" data-base="D">D</span>
+  </div>
+  <div id="t-indicator" aria-hidden="true"></div>
+  <div id="v-badge" aria-hidden="true">Vertical: ON</div>
+</div>
+
+<script>
+/** ========================
+ *  Toggles & Sensitivity
+ *  ======================== */
+let ENABLE_VERTICAL = true;         // ← Set false for horizontal-only
+const VERTICAL_BLEND_MODE = 'hypot';// 'hypot' | 'max' | 'avg'
+
+const CYCLES = {
+  font: 8,    // font switches center→edge
+  case: 12,   // case toggles
+  italic: 10, // italic toggles
+  weight: 6,  // weight oscillations
+  spacing: 5  // spacing oscillations
+};
+
+/** ========================
+ *  Utilities
+ *  ======================== */
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeInOut = (t) => t<0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+
+/** ========================
+ *  Per-letter configs
+ *  ======================== */
+const LETTERS = [
+  {
+    id: "L-I",
+    base: "I",
+    families: [
+      ["Playfair Display", "serif"],
+      ["Merriweather", "serif"],
+      ["Libre Baskerville", "serif"],
+      ["Lora", "serif"],
+      ["Spectral", "serif"],
+      ["Crimson Text", "serif"],
+      ["Bitter", "serif"],
+      ["Source Serif 4", "serif"],
+      ["DM Serif Display", "serif"]
+    ],
+    weightMin: 300, weightMax: 900,
+    italicBias: 0.5,
+    spacingRangeEm: [0.00, 0.10],
+    tiltDeg: [0, 2]
+  },
+  {
+    id: "L-S",
+    base: "S",
+    families: [
+      ["Inter", "sans-serif"],
+      ["DM Sans", "sans-serif"],
+      ["Work Sans", "sans-serif"],
+      ["Roboto", "sans-serif"],
+      ["Montserrat", "sans-serif"],
+      ["Poppins", "sans-serif"],
+      ["Raleway", "sans-serif"],
+      ["Karla", "sans-serif"],
+      ["Manrope", "sans-serif"],
+      ["Rubik", "sans-serif"],
+      ["Oswald", "sans-serif"],
+      ["IBM Plex Sans", "sans-serif"]
+    ],
+    weightMin: 200, weightMax: 900,
+    italicBias: 0.6,
+    spacingRangeEm: [0.00, 0.12],
+    tiltDeg: [0, -3]
+  },
+  {
+    id: "L-T",
+    base: "T",
+    families: [
+      ["IBM Plex Mono", "monospace"],
+      ["Inconsolata", "monospace"],
+      ["Space Mono", "monospace"],
+      ["Fira Mono", "monospace"],
+      ["Courier New", "monospace"]
+    ],
+    weightMin: 300, weightMax: 700,
+    italicBias: 0.55,
+    spacingRangeEm: [0.00, 0.06],
+    tiltDeg: [0, 0]
+  },
+  {
+    id: "L-D",
+    base: "D",
+    families: [
+      ["DM Sans", "sans-serif"],
+      ["Inter", "sans-serif"],
+      ["Work Sans", "sans-serif"],
+      ["Roboto", "sans-serif"],
+      ["Montserrat", "sans-serif"],
+      ["Poppins", "sans-serif"],
+      ["Raleway", "sans-serif"],
+      ["Karla", "sans-serif"],
+      ["Manrope", "sans-serif"],
+      ["Rubik", "sans-serif"],
+      ["Oswald", "sans-serif"]
+    ],
+    weightMin: 300, weightMax: 850,
+    italicBias: 0.4,
+    spacingRangeEm: [0.00, 0.10],
+    tiltDeg: [0, 4]
+  }
+];
+
+/** ========================
+ *  DOM setup
+ *  ======================== */
+const container = document.getElementById("istd");
+const indicator = document.getElementById("t-indicator");
+const vBadge = document.getElementById("v-badge");
+
+const nodes = LETTERS.map(cfg => {
+  const el = document.getElementById(cfg.id);
+  const startIndex = Math.floor(Math.random() * cfg.families.length);
+  el.style.fontFamily = cfg.families[startIndex].join(", ");
+  el.style.fontWeight = String(cfg.weightMin);
+  el.style.fontStyle = "normal";
+  return { el, cfg, familyIndex: startIndex };
+});
+
+let lastClientX = window.innerWidth / 2;
+let lastClientY = window.innerHeight / 2;
+
+/** ========================
+ *  Center-based mapping
+ *  ======================== */
+function normalizeSigned(value, halfSize) {
+  if (halfSize <= 0) return 0;
+  const s = Math.max(-1, Math.min(1, value / halfSize));
+  const sign = Math.sign(s) || 1;
+  return sign * easeInOut(Math.min(1, Math.abs(s)));
+}
+
+function computeFromViewport(clientX, clientY) {
+  const vw = window.innerWidth || document.documentElement.clientWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const centerX = vw / 2;
+  const centerY = vh / 2;
+  const dx = clientX - centerX;
+  const dy = clientY - centerY;
+
+  const signedX = normalizeSigned(dx, centerX); // -1..1
+  const signedY = normalizeSigned(dy, centerY); // -1..1
+
+  let magT;
+  if (ENABLE_VERTICAL) {
+    const ax = Math.abs(signedX), ay = Math.abs(signedY);
+    if (VERTICAL_BLEND_MODE === 'max') {
+      magT = Math.max(ax, ay);
+    } else if (VERTICAL_BLEND_MODE === 'avg') {
+      magT = Math.min(1, (ax + ay) / 2);
+    } else {
+      magT = Math.min(1, Math.hypot(signedX, signedY)); // radial
+    }
+  } else {
+    magT = Math.abs(signedX);
+  }
+
+  return { signedX, magT };
+}
+
+function updateLetters(signedX, magT) {
+  nodes.forEach(({ el, cfg }) => {
+    const { base, families, weightMin, weightMax, italicBias, spacingRangeEm, tiltDeg } = cfg;
+
+    // FONT FAMILY — multiple loops outward from center
+    const fontSteps = families.length;
+    const fontPhase = Math.floor(magT * CYCLES.font * fontSteps);
+    const fIdx = fontPhase % fontSteps;
+    el.style.fontFamily = families[fIdx].join(", ");
+
+    // CASE — multiple toggles
+    const casePhase = Math.floor(magT * CYCLES.case);
+    const upper = (casePhase % 2) === 1;
+    el.textContent = upper ? base.toUpperCase() : base.toLowerCase();
+
+    // ITALIC — multiple toggles with bias
+    const italicPhase = Math.floor(magT * CYCLES.italic + italicBias);
+    el.style.fontStyle = (italicPhase % 2) === 1 ? "italic" : "normal";
+
+    // WEIGHT — sine oscillation
+    const wSin = Math.sin(magT * CYCLES.weight * Math.PI * 2); // -1..1
+    const wNorm = (wSin + 1) / 2; // 0..1
+    const weight = Math.round(lerp(weightMin, weightMax, wNorm) / 50) * 50;
+    el.style.fontWeight = String(weight);
+
+    // SPACING — gentle oscillation
+    const spSin = Math.sin(magT * CYCLES.spacing * Math.PI * 2);
+    const spNorm = (spSin + 1) / 2;
+    const spacing = lerp(spacingRangeEm[0], spacingRangeEm[1], spNorm);
+    el.style.letterSpacing = spacing.toFixed(3) + "em";
+
+    // ROTATION — horizontal sign determines direction
+    const rotMag = lerp(tiltDeg[0], tiltDeg[1], (Math.sin(magT * Math.PI) + 1) / 2);
+    el.style.transform = `translateZ(0) rotate(${rotMag * (signedX >= 0 ? 1 : -1)}deg)`;
+  });
+
+  indicator.style.width = (magT * 100).toFixed(2) + "%";
+}
+
+/** ========================
+ *  Pointer (mouse/pen/touch)
+ *  ======================== */
+function handlePointer(posX, posY) {
+  lastClientX = posX;
+  lastClientY = posY;
+  const { signedX, magT } = computeFromViewport(posX, posY);
+  window.requestAnimationFrame(() => updateLetters(signedX, magT));
+}
+
+const passiveOpts = { passive: true };
+
+// Prefer Pointer Events when available
+if (window.PointerEvent) {
+  document.body.addEventListener('pointermove', (e) => {
+    handlePointer(e.clientX, e.clientY);
+  }, passiveOpts);
+
+  // first contact (tap/click) should also update immediately
+  document.body.addEventListener('pointerdown', (e) => {
+    handlePointer(e.clientX, e.clientY);
+  }, passiveOpts);
+} else {
+  // Fallback: touch + mouse
+  document.body.addEventListener('touchstart', (e) => {
+    if (e.touches && e.touches.length) {
+      const t = e.touches[0];
+      handlePointer(t.clientX, t.clientY);
+    }
+  }, passiveOpts);
+
+  document.body.addEventListener('touchmove', (e) => {
+    if (e.touches && e.touches.length) {
+      const t = e.touches[0];
+      handlePointer(t.clientX, t.clientY);
+    }
+  }, passiveOpts);
+
+  document.body.addEventListener('mousemove', (e) => {
+    handlePointer(e.clientX, e.clientY);
+  }, passiveOpts);
+}
+
+/** ========================
+ *  Keyboard toggle (V)
+ *  ======================== */
+document.addEventListener('keydown', (e) => {
+  if (e.key && e.key.toLowerCase() === 'v') {
+    ENABLE_VERTICAL = !ENABLE_VERTICAL;
+    vBadge.textContent = `Vertical: ${ENABLE_VERTICAL ? 'ON' : 'OFF'}`;
+    // repaint with last pointer position
+    const { signedX, magT } = computeFromViewport(lastClientX, lastClientY);
+    window.requestAnimationFrame(() => updateLetters(signedX, magT));
+  }
+});
+
+/** ========================
+ *  Initial paint & resize
+ *  ======================== */
+vBadge.textContent = `Vertical: ${ENABLE_VERTICAL ? 'ON' : 'OFF'}`;
+updateLetters(0, 0);
+window.addEventListener('resize', () => {
+  const { signedX, magT } = computeFromViewport(lastClientX, lastClientY);
+  window.requestAnimationFrame(() => updateLetters(signedX, magT));
+});
+</script>
+
+</body>
+</html>
